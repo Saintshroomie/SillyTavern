@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Retry Continue** is a SillyTavern third-party extension that adds checkpoint-based retry functionality via swipes. It serves as a reference implementation for building SillyTavern extensions.
+This is a comprehensive development guide for building SillyTavern third-party extensions, from simple UI additions to complex systems like **SillyMem** (structured narrative memory with LLM-driven scene summaries, fact extraction, and narrative arc management). It covers the full ST extension API surface: context, events, prompt injection, LLM generation, token counting, file storage, group chats, and more.
 
 ## Repository Structure
 
@@ -654,6 +654,697 @@ Use liberally throughout your code — it's free when disabled and invaluable wh
 
 ---
 
+## Generating LLM Responses from Extensions
+
+Extensions can make LLM calls independently of the main chat generation. Two primary functions are available:
+
+### `generateRaw` — Direct Prompt Control
+
+Sends a prompt directly to the active LLM API without using the normal chat pipeline. Best for structured/templated prompts where you control the full prompt content.
+
+```javascript
+import { generateRaw } from '../../../script.js';
+
+const result = await generateRaw({
+    prompt: sceneText,              // Main prompt text (user-role content)
+    systemPrompt: instructionText,  // System-role instruction (optional)
+    responseLength: 500,            // Max tokens for response (optional, 0 = use default)
+});
+// result is a string containing the LLM's response
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `prompt` | `string` | The main prompt content sent as user message |
+| `systemPrompt` | `string` | System instruction prepended to the prompt |
+| `responseLength` | `number\|null` | Override max response tokens. `null` or `0` uses default |
+| `api` | `string\|null` | Override which API to use (default: current `main_api`) |
+| `instructOverride` | `boolean` | Override instruct mode formatting |
+| `prefill` | `string` | Assistant prefill text (for APIs that support it) |
+
+### `generateQuietPrompt` — Pipeline-Aware Generation
+
+Generates through the normal ST pipeline but "quietly" — the result is not added to the chat. Includes character context and system prompt from current settings.
+
+```javascript
+import { generateQuietPrompt } from '../../../script.js';
+
+const result = await generateQuietPrompt({
+    quietPrompt: 'Summarize the following scene...',
+    skipWIAN: true,          // Skip World Info and Author's Note
+    responseLength: 300,     // Override response length
+    removeReasoning: true,   // Strip chain-of-thought (default: true)
+    trimToSentence: false,   // Trim to last complete sentence
+});
+```
+
+### When to Use Which
+
+| Use Case | Function | Why |
+|----------|----------|-----|
+| Structured extraction (facts, summaries) | `generateRaw` | Full control over prompt format, no character bleed |
+| Narrative generation needing character voice | `generateQuietPrompt` | Includes character context automatically |
+| Template-driven prompts with custom variables | `generateRaw` | Clean separation of instruction and content |
+
+### Stripping Reasoning from Responses
+
+When using `generateRaw`, the response may include chain-of-thought reasoning tags. Strip them:
+
+```javascript
+import { removeReasoningFromString } from '../../reasoning.js';
+
+const cleanResult = removeReasoningFromString(await generateRaw({ prompt, systemPrompt }));
+```
+
+`generateQuietPrompt` does this automatically when `removeReasoning: true` (the default).
+
+### Preventing Concurrent API Calls
+
+Use a guard flag to prevent overlapping generation requests:
+
+```javascript
+let inApiCall = false;
+
+async function runGeneration(prompt) {
+    if (inApiCall) return null;
+    inApiCall = true;
+    try {
+        return await generateRaw({ prompt, systemPrompt: instruction });
+    } catch (error) {
+        console.error('Generation failed:', error);
+        return null;
+    } finally {
+        inApiCall = false;
+    }
+}
+```
+
+---
+
+## Extension Prompt Injection
+
+Extensions inject content into the LLM's prompt at generation time using `setExtensionPrompt`. This is the primary mechanism for feeding memory, context, or instructions to the model.
+
+```javascript
+import { setExtensionPrompt, extension_prompt_types, extension_prompt_roles } from '../../../script.js';
+
+setExtensionPrompt(
+    key,       // Unique string identifier for this injection (e.g., 'sillymem_scenes')
+    value,     // Content to inject (string). Empty string '' removes the injection.
+    position,  // Where to place it (extension_prompt_types enum)
+    depth,     // Message depth for IN_CHAT position (0 = after latest message)
+    scan,      // Boolean — include in World Info keyword scanning? (default: false)
+    role,      // Message role (extension_prompt_roles enum)
+);
+```
+
+### Position Types
+
+| Constant | Value | Behavior |
+|----------|-------|----------|
+| `extension_prompt_types.NONE` | -1 | Disabled — not injected |
+| `extension_prompt_types.IN_PROMPT` | 0 | Injected into system prompt area |
+| `extension_prompt_types.IN_CHAT` | 1 | Injected into chat history at specified depth |
+| `extension_prompt_types.BEFORE_PROMPT` | 2 | Injected before the system prompt |
+
+### Role Types
+
+| Constant | Value | Behavior |
+|----------|-------|----------|
+| `extension_prompt_roles.SYSTEM` | 0 | System message role |
+| `extension_prompt_roles.USER` | 1 | User message role |
+| `extension_prompt_roles.ASSISTANT` | 2 | Assistant message role |
+
+### Depth Ordering
+
+When using `IN_CHAT`, **depth** controls how far back from the latest message the injection is placed:
+- Depth `0` = after the very latest message
+- Depth `4` = four messages back from the end
+- Lower depth = closer to the generation point (higher weight from the LLM)
+
+At the same depth, injections are ordered by role priority: System → User → Assistant.
+
+### Multiple Injection Keys
+
+Call `setExtensionPrompt` multiple times with **different keys** to inject multiple blocks independently:
+
+```javascript
+// Each key manages its own injection — they don't overwrite each other
+setExtensionPrompt('sillymem_scenes', sceneSummariesText,
+    extension_prompt_types.IN_CHAT, 4, false, extension_prompt_roles.SYSTEM);
+
+setExtensionPrompt('sillymem_arc', arcDirectiveText,
+    extension_prompt_types.IN_CHAT, 4, false, extension_prompt_roles.SYSTEM);
+
+setExtensionPrompt('sillymem_facts', factsText,
+    extension_prompt_types.IN_CHAT, 4, false, extension_prompt_roles.SYSTEM);
+
+// To disable one without affecting others:
+setExtensionPrompt('sillymem_arc', '', extension_prompt_types.NONE, 0);
+```
+
+### Wrapping Injection Content
+
+Wrap injected content in labeled blocks so it's clear to the LLM what it is:
+
+```javascript
+import { substituteParamsExtended } from '../../../script.js';
+
+const template = '[Story So Far:\n{{summary}}\n]';
+const formatted = substituteParamsExtended(template, { summary: sceneSummariesText });
+setExtensionPrompt('sillymem_scenes', formatted, extension_prompt_types.IN_CHAT, 4);
+```
+
+---
+
+## Token Counting
+
+SillyTavern provides tokenization utilities for estimating prompt sizes. Essential for displaying token budgets and making context-aware decisions.
+
+### Async Token Count (Recommended)
+
+```javascript
+import { getTokenCountAsync } from '../../tokenizers.js';
+
+// Automatically selects the correct tokenizer for the current API
+const count = await getTokenCountAsync(text, 0);  // text, optional padding
+```
+
+### Synchronous Token Count
+
+```javascript
+import { getTextTokens, tokenizers } from '../../tokenizers.js';
+
+// Returns token ID array for a specific tokenizer
+const tokens = getTextTokens(tokenizers.GPT2, text);
+const count = tokens.length;
+```
+
+### Common Tokenizer IDs
+
+| Constant | Value | Use With |
+|----------|-------|----------|
+| `tokenizers.NONE` | 0 | No tokenization |
+| `tokenizers.GPT2` | 1 | Fallback / Extras API |
+| `tokenizers.OPENAI` | 2 | OpenAI models |
+| `tokenizers.LLAMA` | 3 | LLaMA / Alpaca |
+| `tokenizers.CLAUDE` | 11 | Anthropic Claude |
+| `tokenizers.LLAMA3` | 12 | LLaMA 3+ |
+
+### Context Window Size
+
+```javascript
+import { getMaxContextSize } from '../../../script.js';
+
+const maxTokens = getMaxContextSize();  // Current context window size in tokens
+```
+
+### Example: Token Budget Display
+
+```javascript
+async function updateTokenDisplay() {
+    const scenesTokens = await getTokenCountAsync(sceneSummariesText);
+    const arcTokens = await getTokenCountAsync(arcDirectiveText);
+    const factsTokens = await getTokenCountAsync(factsText);
+    const total = scenesTokens + arcTokens + factsTokens;
+    document.getElementById('sm_token_count').textContent = `~${total} tokens`;
+}
+```
+
+---
+
+## File-Based Storage for Extensions
+
+Extensions that need to persist data beyond `chatMetadata` and `extensionSettings` can use server API calls.
+
+### Making Authenticated Server Requests
+
+All ST server API calls require authentication headers:
+
+```javascript
+import { getRequestHeaders } from '../../../script.js';
+
+const response = await fetch('/api/endpoint', {
+    method: 'POST',
+    headers: getRequestHeaders(),
+    body: JSON.stringify({ key: 'value' }),
+});
+
+if (response.ok) {
+    const data = await response.json();
+}
+```
+
+### Storage Strategy Comparison
+
+| Approach | Pros | Cons | Best For |
+|----------|------|------|----------|
+| `chatMetadata` | Automatic save/load with chat, no server calls | Size limits, lost if chat deleted | Small per-chat state (flags, counters) |
+| `extensionSettings` | Persists globally, easy API | Not per-chat, all-or-nothing save | User preferences, prompt templates |
+| Server file API | Full control, any format, large data | Requires server endpoints, more code | Large per-chat data (memory files) |
+
+### Server File Operations
+
+SillyTavern exposes file endpoints at `/api/files/`:
+
+```javascript
+// Upload/save a file
+const response = await fetch('/api/files/upload', {
+    method: 'POST',
+    headers: getRequestHeaders(),
+    body: formData,  // FormData with file content
+});
+
+// Verify a file exists
+const response = await fetch('/api/files/verify', {
+    method: 'POST',
+    headers: getRequestHeaders(),
+    body: JSON.stringify({ filename: 'story-memory/char_chatid.md' }),
+});
+```
+
+### Recommended Pattern for Extension Data Files
+
+For extensions needing per-chat files (e.g., markdown memory files), the simplest approach for third-party extensions is to store serialized content in `chatMetadata`:
+
+```javascript
+// Save memory data as serialized markdown in chat metadata
+context.chatMetadata.storyMemory = {
+    version: 1,
+    markdownContent: fullMarkdownString,
+    lastModified: Date.now(),
+};
+context.saveMetadata();
+
+// Load on chat switch
+eventSource.on(eventTypes.CHAT_CHANGED, () => {
+    const ctx = SillyTavern.getContext();
+    const saved = ctx.chatMetadata?.storyMemory;
+    if (saved) {
+        parseMemoryFile(saved.markdownContent);
+    }
+});
+```
+
+For larger data or external file access, consider a server plugin (loaded via `src/plugin-loader.js`) that registers custom Express routes.
+
+---
+
+## Group Chat Integration
+
+SillyTavern supports group chats where multiple characters interact. Extensions must handle both solo and group modes.
+
+### Detecting Group Chat Mode
+
+```javascript
+import { selected_group, is_group_generating, groups } from '../../group-chats.js';
+
+if (selected_group) {
+    // Currently in a group chat
+    const groupId = selected_group;                    // Group ID string
+    const group = groups.find(g => g.id === groupId);  // Full group object
+    const memberIds = group.members;                   // Array of character avatar filenames
+} else {
+    // Solo (1:1) chat
+}
+```
+
+### Via Context API
+
+```javascript
+const context = SillyTavern.getContext();
+if (context.groupId) {
+    // Group chat mode
+}
+```
+
+### Waiting for Group Generation
+
+In group chats, generation cycles through multiple characters. Wait for completion before proceeding:
+
+```javascript
+import { waitUntilCondition } from '../../utils.js';
+import { is_group_generating } from '../../group-chats.js';
+
+if (selected_group) {
+    await waitUntilCondition(() => is_group_generating === false, 1000, 10);
+}
+// Safe to proceed — all group members have finished generating
+```
+
+### Accessing Group Member Data
+
+```javascript
+const context = SillyTavern.getContext();
+const group = groups.find(g => g.id === selected_group);
+
+// Get character objects for all group members
+const memberCharacters = group.members
+    .map(avatar => context.characters.find(c => c.avatar === avatar))
+    .filter(Boolean);
+
+// Collect all descriptions (useful for arc generation context)
+const descriptions = memberCharacters.map(c => `${c.name}: ${c.description}`).join('\n\n');
+```
+
+### Scoping Data by Chat Type
+
+For extensions with per-chat storage, generate unique identifiers:
+
+```javascript
+function getMemoryFileId() {
+    const context = SillyTavern.getContext();
+    if (selected_group) {
+        const group = groups.find(g => g.id === selected_group);
+        return `${sanitize(group.name)}_${context.chatId}`;
+    } else {
+        return `${sanitize(context.characters[context.characterId].name)}_${context.chatId}`;
+    }
+}
+```
+
+---
+
+## Accessing Character & World Info Data
+
+### Character Card Fields
+
+```javascript
+const context = SillyTavern.getContext();
+const char = context.characters[context.characterId];
+```
+
+| Field | Description |
+|-------|-------------|
+| `char.name` | Character display name |
+| `char.description` | Character description / personality card |
+| `char.personality` | Personality summary |
+| `char.scenario` | Scenario / setting description |
+| `char.first_mes` | Default first message (greeting) |
+| `char.mes_example` | Example dialogue |
+| `char.system_prompt` | Character-specific system prompt override |
+| `char.post_history_instructions` | Jailbreak / post-history instructions |
+| `char.tags` | Array of tag strings |
+
+### User Persona Description
+
+```javascript
+import { power_user } from '../../power-user.js';
+
+const personaDescription = power_user.persona_description;  // String or empty
+const personaPosition = power_user.persona_description_position;
+```
+
+### World Info / Lorebook Access
+
+Get activated World Info text (entries whose keywords matched the current context):
+
+```javascript
+const context = SillyTavern.getContext();
+
+// Get the full resolved World Info prompt text (all activated entries combined)
+if (typeof context.getWorldInfoPrompt === 'function') {
+    const worldInfoText = await context.getWorldInfoPrompt();
+}
+```
+
+Listen for World Info activation events to access individual entries:
+
+```javascript
+eventSource.on(eventTypes.WORLD_INFO_ACTIVATED, (activatedEntries) => {
+    // activatedEntries contains the WI entries that matched during prompt building
+    // Use for contextual awareness of what lore is active
+});
+```
+
+### Assembling Full Context for LLM Calls
+
+When building prompts that need rich context (e.g., arc generation), combine multiple sources:
+
+```javascript
+function assembleNarrativeContext() {
+    const context = SillyTavern.getContext();
+    const parts = [];
+
+    // Character description(s)
+    if (selected_group) {
+        const group = groups.find(g => g.id === selected_group);
+        group.members.forEach(avatar => {
+            const char = context.characters.find(c => c.avatar === avatar);
+            if (char) parts.push(`Character — ${char.name}:\n${char.description}`);
+        });
+    } else {
+        const char = context.characters[context.characterId];
+        parts.push(`Character — ${char.name}:\n${char.description}`);
+    }
+
+    // User persona
+    if (power_user.persona_description) {
+        parts.push(`User persona:\n${power_user.persona_description}`);
+    }
+
+    return parts.join('\n\n');
+}
+```
+
+---
+
+## Template Substitution (Macros)
+
+SillyTavern provides macro substitution for resolving template variables like `{{char}}` and `{{user}}`.
+
+### Standard Macros
+
+```javascript
+import { substituteParams } from '../../../script.js';
+
+const resolved = substituteParams('{{char}} looks at {{user}} and smiles.');
+// → "Alice looks at Bob and smiles." (using current character/user names)
+```
+
+Common built-in macros: `{{char}}`, `{{user}}`, `{{time}}`, `{{date}}`, `{{idle_duration}}`, `{{lastMessage}}`, `{{lastMessageId}}`, `{{newline}}`, `{{trim}}`.
+
+### Extended Macros with Custom Variables
+
+```javascript
+import { substituteParamsExtended } from '../../../script.js';
+
+const template = `Summarize scene {{sceneNumber}} for {{char}}.
+Previous scene: {{previousScene}}`;
+
+const resolved = substituteParamsExtended(template, {
+    sceneNumber: '5',
+    previousScene: lastSceneSummary,
+});
+// Resolves both standard ({{char}}) and custom ({{sceneNumber}}) macros
+```
+
+This is the recommended approach for prompt templates — define templates with placeholder variables and resolve them at runtime with `substituteParamsExtended`.
+
+---
+
+## Advanced Slash Command Registration
+
+The modern pattern for registering slash commands uses `SlashCommandParser` with typed arguments:
+
+```javascript
+import { SlashCommandParser } from '../../slash-commands/SlashCommandParser.js';
+import { SlashCommand } from '../../slash-commands/SlashCommand.js';
+import { ARGUMENT_TYPE, SlashCommandArgument, SlashCommandNamedArgument }
+    from '../../slash-commands/SlashCommandArgument.js';
+
+SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+    name: 'sm-fact',
+    callback: async (namedArgs, unnamedArgs) => {
+        // unnamedArgs is the raw string after the command name
+        // namedArgs is an object of --key=value pairs
+        const parts = unnamedArgs.split('|').map(s => s.trim());
+        if (parts.length < 3) return 'Usage: /sm-fact subject | state | keywords';
+        addFact(parts[0], parts[1], parts[2]);
+        return '';
+    },
+    unnamedArgumentList: [
+        SlashCommandArgument.fromProps({
+            description: 'subject | state | keywords',
+            typeList: [ARGUMENT_TYPE.STRING],
+            isRequired: true,
+        }),
+    ],
+    helpString: 'Manually adds a persistent fact entry.',
+}));
+```
+
+### Command with Named Arguments
+
+```javascript
+SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+    name: 'sm-retry',
+    callback: async (namedArgs, unnamedArgs) => {
+        const step = unnamedArgs?.trim() || 'all';
+        await retryPipelineStep(step);
+        return '';
+    },
+    unnamedArgumentList: [
+        SlashCommandArgument.fromProps({
+            description: 'Pipeline step to retry: scene, facts, or arc',
+            typeList: [ARGUMENT_TYPE.STRING],
+            isRequired: false,
+        }),
+    ],
+    aliases: [],
+    helpString: 'Re-runs a specific pipeline step for the most recent scene break.',
+}));
+```
+
+### Key `SlashCommand.fromProps` Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `name` | `string` | Command name (used as `/name`) |
+| `callback` | `function` | `(namedArgs, unnamedArgs) => string` handler |
+| `aliases` | `string[]` | Alternative command names |
+| `helpString` | `string` | Shown in `/help` |
+| `unnamedArgumentList` | `SlashCommandArgument[]` | Positional argument definitions |
+| `namedArgumentList` | `SlashCommandNamedArgument[]` | Named `--key=value` argument definitions |
+
+---
+
+## Multi-Step LLM Pipelines
+
+For extensions that run multiple sequential LLM calls (e.g., summarize → extract facts → generate arc), use a structured pipeline pattern.
+
+### Pipeline Structure
+
+```javascript
+import { deactivateSendButtons, activateSendButtons } from '../../../script.js';
+
+let pipelineRunning = false;
+
+async function runSceneBreakPipeline(sceneMessages) {
+    if (pipelineRunning) return;
+    pipelineRunning = true;
+    deactivateSendButtons();  // Lock UI to prevent user generation during pipeline
+
+    const results = { summary: null, facts: null, arc: null };
+
+    try {
+        // Step 1: Scene Summary
+        updatePipelineStatus('Step 1/3: Generating scene summary...');
+        try {
+            results.summary = await generateSceneSummary(sceneMessages);
+        } catch (err) {
+            console.error('Scene summary failed:', err);
+            showStepWarning('scene', err.message);
+            // Continue to next step — failures are independent
+        }
+
+        // Step 2: Fact Extraction
+        updatePipelineStatus('Step 2/3: Extracting facts...');
+        try {
+            const input = results.summary || sceneMessages;  // Fallback to raw if summary failed
+            results.facts = await extractFacts(input);
+        } catch (err) {
+            console.error('Fact extraction failed:', err);
+            showStepWarning('facts', err.message);
+        }
+
+        // Step 3: Arc Generation (conditional)
+        if (shouldGenerateArc()) {
+            updatePipelineStatus('Step 3/3: Generating arc directive...');
+            try {
+                results.arc = await generateArcDirective();
+            } catch (err) {
+                console.error('Arc generation failed:', err);
+                showStepWarning('arc', err.message);
+            }
+        }
+    } finally {
+        pipelineRunning = false;
+        activateSendButtons();  // Always unlock UI
+        updatePipelineStatus('idle');
+    }
+
+    return results;
+}
+```
+
+### Key Principles
+
+1. **Independent failure** — each step has its own try/catch. A failed step never blocks subsequent steps.
+2. **UI lockout** — `deactivateSendButtons()` / `activateSendButtons()` prevents user generation during pipeline.
+3. **Guard flag** — `pipelineRunning` prevents concurrent pipeline execution.
+4. **Progress feedback** — update a status indicator after each step.
+5. **Graceful degradation** — if step 1 fails, step 2 can use fallback input (e.g., raw messages instead of summary).
+6. **Always unlock** — use `finally` to ensure UI is unlocked even on unexpected errors.
+
+### Parsing Structured LLM Output
+
+For pipelines that expect structured output (e.g., pipe-delimited facts), validate and filter:
+
+```javascript
+function parseFacts(rawOutput) {
+    return rawOutput
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.startsWith('FACT |'))
+        .map(line => {
+            const parts = line.split('|').map(s => s.trim());
+            if (parts.length !== 4) return null;
+            return { subject: parts[1], state: parts[2], keywords: parts[3] };
+        })
+        .filter(Boolean);
+}
+```
+
+---
+
+## Popout / Draggable Panels
+
+Extensions can create floating panels that persist their position across reloads.
+
+### Loading HTML Templates
+
+For complex UI, store HTML in separate template files and load them:
+
+```javascript
+import { renderExtensionTemplateAsync } from '../../extensions.js';
+
+// Loads HTML from your extension's directory: extensions/third-party/my-extension/panel.html
+const panelHtml = await renderExtensionTemplateAsync('third-party/my-extension', 'panel', {});
+document.body.insertAdjacentHTML('beforeend', panelHtml);
+```
+
+### Making Panels Draggable
+
+```javascript
+import { dragElement } from '../../RossAscends-mods.js';
+import { loadMovingUIState } from '../../power-user.js';
+
+// After inserting the panel into the DOM:
+const panel = document.getElementById('sm_panel');
+dragElement($(panel));       // Enable drag (uses jQuery wrapper)
+loadMovingUIState();         // Restore saved position from last session
+```
+
+> **Note**: `dragElement` expects a jQuery object. The panel element needs an `id` attribute for position persistence to work.
+
+### Popout Pattern
+
+ST extensions commonly support "popping out" their panel from the extensions sidebar into a floating window:
+
+```javascript
+const popoutButton = document.getElementById('sm_popout_button');
+popoutButton.addEventListener('click', () => {
+    const panel = document.getElementById('sm_panel');
+    panel.classList.toggle('popout');  // Toggle CSS class that changes positioning
+    // Store popout state
+    extensionSettings.popout = panel.classList.contains('popout');
+    saveSettingsDebounced();
+});
+```
+
+---
+
 ## Best Practices Summary
 
 1. **Always get a fresh context** — call `SillyTavern.getContext()` when you need it, don't cache across async boundaries
@@ -675,6 +1366,14 @@ Use liberally throughout your code — it's free when disabled and invaluable wh
 17. **Add debug logging** — a conditional `debug()` function controlled by a setting costs nothing when off and saves hours of troubleshooting
 18. **Multiple button placements** — add buttons to both the hamburger menu (`send_form`) and quick-action bar (`rightSendForm`) for discoverability
 19. **Hide/show buttons during generation** — toggle `display` on quick-action buttons via `GENERATION_STARTED`/`GENERATION_ENDED` to prevent double-triggers
+20. **Use `generateRaw` for structured prompts** — when you need full control over prompt format (summaries, extractions); use `generateQuietPrompt` when you need character context
+21. **Use unique injection keys** — when calling `setExtensionPrompt` multiple times, each content type needs its own key string to avoid overwrites
+22. **Display token budgets** — use `getTokenCountAsync` to show users how many tokens their memory/injection content consumes
+23. **Handle pipeline failures independently** — in multi-step LLM pipelines, each step should have its own try/catch so one failure doesn't block the rest
+24. **Check `selected_group` for group awareness** — never assume solo chat; guard group-specific logic behind `if (selected_group)` checks
+25. **Use `substituteParamsExtended` for prompt templates** — resolve both standard ST macros and custom variables in a single call
+26. **Lock UI during LLM pipelines** — call `deactivateSendButtons()` before multi-step generation and `activateSendButtons()` in a `finally` block
+27. **Parse LLM output defensively** — validate structured output line-by-line and silently discard malformed lines rather than failing entirely
 
 ---
 
