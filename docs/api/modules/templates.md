@@ -48,6 +48,16 @@ const html2 = await renderTemplateAsync(
 );
 ```
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `templateId` | `string` | — | Template identifier; either a name under `/scripts/templates/` or a full URL when `fullPath` is `true`. |
+| `templateData` | `object` | `{}` | Data passed to the compiled Handlebars template. |
+| `sanitize` | `boolean` | `true` | Run the rendered HTML through `DOMPurify.sanitize`. |
+| `localize` | `boolean` | `true` | Apply `data-i18n` substitutions via `applyLocale`. |
+| `fullPath` | `boolean` | `false` | Treat `templateId` as a full URL rather than a name under `/scripts/templates/`. |
+
+**Returns:** `Promise<string>` — the rendered (and optionally sanitized + localized) HTML string. Resolves to `undefined` on failure (toast is shown, error logged).
+
 ### `renderTemplate(templateId, templateData = {}, sanitize = true, localize = true, fullPath = false) → string`
 
 Synchronous mirror of `renderTemplateAsync`. Uses a blocking `XMLHttpRequest` to fetch the template the first time it's seen, then reuses the cached compiled function on subsequent calls.
@@ -58,6 +68,16 @@ Synchronous mirror of `renderTemplateAsync`. Uses a blocking `XMLHttpRequest` to
 // Don't write new code like this — kept around for legacy compatibility.
 const html = renderTemplate('myTemplate', { name: 'Alice' });
 ```
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `templateId` | `string` | — | Template identifier; either a name under `/scripts/templates/` or a full URL when `fullPath` is `true`. |
+| `templateData` | `object` | `{}` | Data passed to the compiled Handlebars template. |
+| `sanitize` | `boolean` | `true` | Run the rendered HTML through `DOMPurify.sanitize`. |
+| `localize` | `boolean` | `true` | Apply `data-i18n` substitutions via `applyLocale`. |
+| `fullPath` | `boolean` | `false` | Treat `templateId` as a full URL rather than a name under `/scripts/templates/`. |
+
+**Returns:** `string` — the rendered HTML string (synchronously).
 
 ## Handlebars basics
 

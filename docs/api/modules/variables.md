@@ -62,9 +62,29 @@ See also: [`../guides/read-write-variables.md`](../guides/read-write-variables.m
 
 Returns the variable value, coerced to `Number` if it parses as numeric. `args.key` overrides `name` (used by slash command plumbing). `args.index` parses the stored value as JSON and returns `value[index]` (numeric index for arrays, string key for objects). Returns `''` if the variable is absent.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Variable name. |
+| `args` | `object` | `{}` | Optional argument bag. |
+| `args.key` | `string` | — | If present, overrides `name` (slash-command plumbing). |
+| `args.index` | `string \| number` | — | Index/key into the stored value (the value is JSON-parsed first). |
+
+**Returns:** `string | number` — the variable value, numeric-coerced when it parses as a number; `''` if the variable is absent.
+
 #### `setLocalVariable(name, value, args?) → value`
 
 Writes `value` to `chat_metadata.variables[name]`. With `args.index`, parses the existing value as JSON, sets one slot, and re-stringifies. `args.as` lets `convertValueType` coerce the new value (`'string'`, `'number'`, `'boolean'`, `'array'`, `'object'`). Throws `Error` if `name` is empty.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Variable name. Throws if empty. |
+| `value` | `string \| number` | — | New value (stored as a string). |
+| `args` | `object` | `{}` | Optional argument bag. |
+| `args.key` | `string` | — | If present, overrides `name`. |
+| `args.index` | `string \| number` | — | Set one slot of a JSON value, leaving the rest. |
+| `args.as` | `string` | — | Coerce via `convertValueType`: `'string'`, `'number'`, `'boolean'`, `'array'`, or `'object'`. |
+
+**Returns:** the value as written (after any `as` coercion).
 
 #### `addLocalVariable(name, value) → number | string | Array`
 
@@ -73,25 +93,56 @@ Three behaviors based on the current value:
 - Else if both sides are numeric, returns `Number(current) + Number(value)`.
 - Else returns `String(current) + value`.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Variable name. |
+| `value` | `string \| number` | — | Value to add / concatenate / push. |
+
+**Returns:** `number | string | Array` — the new value after the operation.
+
 #### `incrementLocalVariable(name) → number | string`
 
 Equivalent to `addLocalVariable(name, 1)`.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Variable name. |
+
+**Returns:** `number | string` — the incremented value.
 
 #### `decrementLocalVariable(name) → number | string`
 
 Equivalent to `addLocalVariable(name, -1)`.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Variable name. |
+
+**Returns:** `number | string` — the decremented value.
+
 #### `existsLocalVariable(name) → boolean`
 
 True iff `chat_metadata.variables` has the key.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Variable name. |
+
+**Returns:** `boolean` — `true` if the local variable is defined.
 
 #### `deleteLocalVariable(name) → ''`
 
 Removes the key from `chat_metadata.variables` and schedules a metadata save. Warns to console (no throw) if the key doesn't exist. Always returns the empty string for slash-command consistency.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Variable name to delete. |
+
+**Returns:** `string` — always `''`.
+
 ### Global variables (session-scoped)
 
-The global functions mirror the local ones exactly, but read/write `extension_settings.variables.global` and call `saveSettingsDebounced`. They have the same signatures and return types as their local counterparts:
+The global functions mirror the local ones exactly, but read/write `extension_settings.variables.global` and call `saveSettingsDebounced`. They have the same signatures and return types as their local counterparts — see the local-variable entries above for the parameter tables.
 
 #### `getGlobalVariable(name, args?) → string | number`
 #### `setGlobalVariable(name, value, args?) → value`
@@ -107,9 +158,18 @@ The global functions mirror the local ones exactly, but read/write `extension_se
 
 Resolves a name in the order: STscript closure `scope` (if provided and the name exists there) → local variables → global variables → the literal `name` string itself. Used by slash commands so that arguments can be either variable names or literal strings.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Variable name (or string literal). |
+| `scope` | `SlashCommandScope` | `null` | Optional STscript closure scope to check first. |
+
+**Returns:** `string | number` — the resolved value, or the string literal `name` if nothing matched.
+
 #### `getVariableMacros() → Macro[]`
 
 Returns the macro descriptor array consumed by `evaluateMacros` in `macros.js`. Includes `{{setvar::n::v}}`, `{{addvar::n::v}}`, `{{incvar::n}}`, `{{decvar::n}}`, `{{getvar::n}}`, and their `…globalvar::…` counterparts. Each entry is `{ regex, replace }`.
+
+**Returns:** `Macro[]` — the array of macro descriptors.
 
 ### Boolean evaluation
 
@@ -117,15 +177,31 @@ Returns the macro descriptor array consumed by `evaluateMacros` in `macros.js`. 
 
 Resolves `args.a` / `args.left` / `args.first` / `args.x` (and similarly for `b`) using the order: numeric literal → STscript scope variable → local variable → global variable → string literal. `rule` is passed through from `args.rule`. Used internally by `/if` and `/while`.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `args` | `object` | — | Slash-command argument bag containing `a`/`left`/`first`/`x`, optionally `b`/`right`/`second`/`y`, and `rule`. |
+
+**Returns:** `{ a, b?, rule }` — typed operand bundle ready for `evalBoolean`.
+
 #### `evalBoolean(rule, a, b?) → boolean`
 
 Evaluates a comparison. If `b` is omitted, checks truthiness of `a` (or its negation when `rule === 'not'`). Numeric rules: `gt`, `gte`, `lt`, `lte`, `eq`, `neq`. String rules (case-insensitive): `in`, `nin`, `eq`, `neq`. `in`/`nin` on numbers falls back to string comparison. Throws `Error` on unknown rules.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `rule` | `string \| null` | — | Comparison rule (`gt`, `gte`, `lt`, `lte`, `eq`, `neq`, `in`, `nin`, `not`). |
+| `a` | `string \| number` | — | Left operand. |
+| `b` | `string \| number` | — | Right operand. Omit for truthiness/`not` checks. |
+
+**Returns:** `boolean` — whether the comparison holds. Throws on unknown `rule`.
 
 ### Registration
 
 #### `registerVariableCommands() → void`
 
 Registers every variable-related slash command (`/setvar`, `/getvar`, `/addvar`, `/incvar`, `/decvar`, `/flushvar`, `/listvar`, plus all the `…globalvar` variants, plus `/let`, `/var`, `/if`, `/while`, etc.) with `SlashCommandParser`. Called once during ST startup — extensions normally never call this themselves.
+
+**Returns:** none.
 
 ## Notes
 

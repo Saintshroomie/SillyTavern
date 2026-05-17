@@ -58,13 +58,33 @@ See also: [handle-reasoning-models.md](../guides/handle-reasoning-models.md) and
 
 Reads the reasoning text from a parsed (non-streaming) response. Knows the per-source location: `choices[0].message.reasoning_content` (Deepseek/XAI/OpenRouter and most "OpenAI-shape" custom providers), `responseContent.parts[].thought` (Gemini), `content[type=thinking].thinking` (Claude), `choices[0].message.content[].thinking` (Mistral), `choices[0].reasoning` (OpenRouter text-gen), `thinking` (Ollama). Returns `''` when no reasoning is present or `show_thoughts` is disabled (unless `ignoreShowThoughts: true`).
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `data` | `object` | — | Parsed (non-streaming) response data. |
+| `options.mainApi` | `string \| null` | `null` | Override for `main_api`. |
+| `options.ignoreShowThoughts` | `boolean` | `false` | Ignore the `show_thoughts` user setting and always extract. |
+| `options.textGenType` | `string \| null` | `null` | Override for the text-completion source. |
+| `options.chatCompletionSource` | `string \| null` | `null` | Override for the chat-completion source. |
+
+**Returns:** `string` — extracted reasoning text, or `''` when none is present.
+
 #### `extractReasoningSignatureFromData(data, { mainApi = null, chatCompletionSource = null } = {}) → string | null`
 
 Pulls an encrypted "thought signature" from the response so the model's chain-of-thought can be re-supplied on later turns. Only meaningful for Gemini via MakerSuite/VertexAI/OpenRouter; returns `null` otherwise.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `data` | `object` | — | Parsed response data. |
+| `options.mainApi` | `string \| null` | `null` | Override for `main_api`. |
+| `options.chatCompletionSource` | `string \| null` | `null` | Override for the chat-completion source. |
+
+**Returns:** `string | null` — encrypted signature for the reasoning text, or `null` if unavailable.
+
 #### `isHiddenReasoningModel() → boolean`
 
 True for OpenAI/Gemini families that reason internally and never return the reasoning text (e.g. `o1*`, `o3*`, `gpt-4.5*`, `gemini-2.0-flash-thinking-exp`, `gemini-2.0-pro-exp`). Used to keep the UI in `Thinking` state while the model is working but no reasoning chunks arrive.
+
+**Returns:** `boolean` — `true` if the active model reasons internally without emitting visible reasoning.
 
 ### Inline parsing
 
@@ -72,9 +92,23 @@ True for OpenAI/Gemini families that reason internally and never return the reas
 
 Pattern-matches `template.prefix(.*?)template.suffix` (defaults to `power_user.reasoning`). With `strict: true` the prefix must be at the start of `str` (ignoring leading whitespace); with `strict: false` it can appear anywhere. Returns `null` when the template lacks a prefix/suffix or the regex fails.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `str` | `string` | — | Message content to parse. |
+| `options.strict` | `boolean` | `true` | Require the reasoning block to be at the start of `str` (ignoring whitespace). |
+| `template` | `ReasoningTemplate` | `null` | Template to use; defaults to `power_user.reasoning`. |
+
+**Returns:** `{ reasoning: string, content: string } | null` — parsed parts, or `null` if no match.
+
 #### `removeReasoningFromString(str) → string`
 
 Returns `parseReasoningFromString(str).content` if auto-parse is on and reasoning is present; otherwise returns `str` unchanged. Useful in custom extension generation flows — for example, strip reasoning from a `generateRaw` result before storing it.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `str` | `string` | — | Input string, possibly containing a reasoning block. |
+
+**Returns:** `string` — input with the reasoning prefix/suffix block removed when auto-parse is enabled.
 
 ```js
 const text = removeReasoningFromString(await generateRaw({ prompt, systemPrompt }));
@@ -84,9 +118,25 @@ const text = removeReasoningFromString(await generateRaw({ prompt, systemPrompt 
 
 Inverse of `parseReasoningFromString`. Produces `prefix + reasoning + suffix + separator + content`. Returns `{ formatted: content, contentOnly: content }` if no reasoning or no template.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `reasoning` | `string` | — | The reasoning/thinking text. |
+| `content` | `string` | — | The main content/response text. |
+| `template` | `ReasoningTemplate` | `null` | Template to use; defaults to `power_user.reasoning`. |
+
+**Returns:** `{ formatted: string, contentOnly: string }` — `formatted` is the wrapped string; `contentOnly` is the content with no reasoning attached.
+
 #### `parseReasoningInSwipes(swipes, swipeInfoArray, duration) → void`
 
 Mutates each entry of `swipes` to its parsed `content`, and writes `reasoning`/`reasoning_duration`/`reasoning_type` into the matching `swipeInfoArray[i].extra`. No-op when auto-parse is disabled or the arrays don't line up.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `swipes` | `string[]` | — | Array of swipe text strings (mutated in place). |
+| `swipeInfoArray` | `{ extra: object }[]` | — | Parallel array of swipe info objects (mutated in place). |
+| `duration` | `number \| null` | — | Duration of the reasoning block to record on each swipe. |
+
+**Returns:** none.
 
 ### Templates
 
@@ -102,15 +152,34 @@ The string `'Think XML'` — name of the default template.
 
 Looks up a template by name. Throws `Error` if not found.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Name of the reasoning template to fetch. |
+
+**Returns:** `ReasoningTemplate` — `{ name, prefix, suffix, separator }`. Throws `Error` if not found.
+
 #### `loadReasoningTemplates(data) → Promise<void>`
 
 Replaces the contents of `reasoning_templates` with `data.reasoning`, fills the template select, and handles a one-time migration of legacy custom prefix/suffix/separator settings into a saved preset.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `data` | `{ reasoning: ReasoningTemplate[] }` | — | Settings payload containing the templates array. |
+
+**Returns:** `Promise<void>` — resolves once templates and UI are loaded.
 
 ### UI
 
 #### `updateReasoningUI(messageIdOrElement, { reset = false } = {}) → void`
 
 Re-renders the `.mes_reasoning_details` block on a message. Accepts a numeric `mesid`, an `HTMLElement`, or a jQuery object. With `reset: true`, clears state instead of taking it from `chat[id].extra`.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `messageIdOrElement` | `number \| HTMLElement \| JQuery` | — | Numeric `mesid`, raw element, or jQuery wrapper for the message. |
+| `options.reset` | `boolean` | `false` | Reset state instead of reading from `chat[id].extra` (e.g. on swipe). |
+
+**Returns:** none.
 
 #### `ReasoningType`
 
@@ -162,3 +231,5 @@ Tracks reasoning carried forward as a prompt prefix when continuing a partially-
 #### `initReasoning() → void`
 
 Wires up settings, event handlers, slash commands, macros, and auto-parse hooks. Called once at startup.
+
+**Returns:** none.

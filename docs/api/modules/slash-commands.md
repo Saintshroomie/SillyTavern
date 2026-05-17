@@ -81,7 +81,7 @@ See also: [`../guides/register-slash-commands.md`](../guides/register-slash-comm
 
 ## From `slash-commands.js`
 
-### `parser` (const)
+### `parser: SlashCommandParser` *(const)*
 
 The singleton `SlashCommandParser`. You normally use `SlashCommandParser.addCommandObject(...)` (a static method) rather than touching `parser` directly, but `parser` is useful for inspection: `parser.commands` lists all registered commands and `parser.getHelpString()` returns the HTML help block.
 
@@ -89,9 +89,11 @@ The singleton `SlashCommandParser`. You normally use `SlashCommandParser.addComm
 
 Registers all built-in slash commands (`/api`, `/sendas`, `/sys`, `/setvar`, …) and binds chat-input handlers. Called once during boot — extensions should not call this.
 
+**Returns:** none.
+
 ### `executeSlashCommandsOnChatInput(text, options = {}) → Promise<SlashCommandClosureResult>`
 
-Parse `text` as STscript and execute it as if the user had typed it into the chat input. Returns the closure's result. While running, `isExecutingCommandsFromChatInput` is `true` and `commandsFromChatInputAbortController` is set.
+Parse `text` as STscript and execute it as if the user had typed it into the chat input. While running, `isExecutingCommandsFromChatInput` is `true` and `commandsFromChatInputAbortController` is set.
 
 ```js
 import { executeSlashCommandsOnChatInput } from '../../../slash-commands.js';
@@ -100,67 +102,143 @@ await executeSlashCommandsOnChatInput('/echo Hello');
 
 > For programmatic use, prefer `SillyTavern.getContext().executeSlashCommandsWithOptions(...)` — it does not depend on the chat input UI.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `text` | `string` | — | Slash command text. |
+| `options.scope` | `SlashCommandScope` | `null` | Scope used when executing the commands. |
+| `options.parserFlags` | `ParserFlags` | `null` | Parser flags to apply. |
+| `options.clearChatInput` | `boolean` | `false` | Whether to clear `#send_textarea` before running. |
+| `options.source` | `string` | `null` | String indicating where the code came from (e.g. QR name). |
+
+**Returns:** `Promise<SlashCommandClosureResult>` — the closure result, or `null` if a chat-input script is already running.
+
 ### `processChatSlashCommands() → void`
 
 Re-applies persistent script injections (`/inject`) and similar chat-bound commands. Called on `CHAT_CHANGED`.
 
+**Returns:** none.
+
 ### `getNameAndAvatarForMessage(character, name = null) → { name, force_avatar, original_avatar }`
 
-Resolve the display name and avatar URL to use when inserting a message attributed to `character` (or a string name).
+Resolve the display name and avatar URL to use when inserting a message attributed to `character` (or a string name). The character's name (when present) takes precedence over `name`.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `character` | `object \| null` | — | The character object to get avatar data for. |
+| `name` | `string \| null` | `null` | Name to use when no character is provided. |
+
+**Returns:** `{ name: string, force_avatar: string, original_avatar: string }` — speaker name and avatar URLs. `force_avatar` / `original_avatar` are `undefined` when the target is the currently selected solo character.
 
 ### `sendMessageAs(args, text) → Promise<void>`
 
-The implementation behind `/sendas`. Inserts a message as a named character, respecting impersonation rules and group chat ordering. `args` is the named-args object; `text` is the message content.
+The implementation behind `/sendas`. Inserts a message as a named character, respecting impersonation rules and group chat ordering.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `args` | `object` | — | Named arguments. Recognized: `name`, `avatar`, `compact`, `at` (index, negative = depth), `return` (return-type selector). |
+| `text` | `string` | — | Message content. |
+
+**Returns:** `Promise<void>` — dispatches through `slashCommandReturnHelper.doReturn` using `args.return` (defaults to `'none'`).
 
 ### `sendNarratorMessage(args, text) → Promise<void>`
 
 The implementation behind `/sys`. Inserts a system/narrator message.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `args` | `object` | — | Named arguments. Recognized: `name`, `compact`, `at` (index, negative = depth), `return`. |
+| `text` | `string` | — | Message content. |
+
+**Returns:** `Promise<void>` — dispatches through `slashCommandReturnHelper.doReturn` using `args.return` (defaults to `'none'`).
+
 ### `promptQuietForLoudResponse(who, text) → Promise<void>`
 
 Run a "quiet" generation but route the result back into the chat loudly (e.g. used by `/genraw`-style flows).
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `who` | `string` | — | One of `'sys'`, `'user'`, `'char'`, `'raw'` — determines how the prompt is prefixed. |
+| `text` | `string` | — | Prompt text. |
+
+**Returns:** `Promise<void>` — appends the response to chat as a character message.
+
 ### `generateSystemMessage(args, prompt) → Promise<void>`
 
-The implementation behind `/genraw` family — generates and appends a system message constructed from `prompt`.
+The implementation behind `/sysgen` — generates and appends a system/narrator message constructed from `prompt`.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `args` | `object` | — | Named arguments. Recognized: `trim` (boolean — trim response to last complete sentence) plus everything `sendNarratorMessage` accepts. |
+| `prompt` | `string` | — | Instruction prompt for the AI. |
+
+**Returns:** `Promise<void>`. Returns `''` and toasts a warning when `prompt` is empty.
 
 ### `validateArrayArgString(arg, name, { allowUndefined = true }) → string[]`
 
-Validate that `arg` is a string array (parsing JSON if needed). Throws with a helpful message referencing `name` on failure. `allowUndefined` returns `[]` if the arg is missing.
+Validate that `arg` is a string array. Throws with a helpful message referencing `name` on failure.
 
-### `validateArrayArg(arg, name, { allowUndefined = true }) → any[]`
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `arg` | `string \| SlashCommandClosure \| (string \| SlashCommandClosure)[] \| undefined` | — | The named argument to check. |
+| `name` | `string` | — | Argument name (used in the error message). |
+| `options.allowUndefined` | `boolean` | `true` | If `true`, returns `undefined` for missing args instead of throwing. |
 
-Same as above but allows mixed-type elements.
+**Returns:** `string[]` — the validated array. Throws when `arg` is not an array of strings.
 
-### `setSlashCommandAutoComplete(textarea, isFloating = false) → Promise<void>`
+### `validateArrayArg(arg, name, { allowUndefined = true }) → (string|SlashCommandClosure)[]`
+
+Same as `validateArrayArgString` but allows `SlashCommandClosure` entries.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `arg` | `string \| SlashCommandClosure \| (string \| SlashCommandClosure)[] \| undefined` | — | The named argument to check. |
+| `name` | `string` | — | Argument name (used in the error message). |
+| `options.allowUndefined` | `boolean` | `true` | If `true`, returns `[]` for missing args instead of throwing. |
+
+**Returns:** `(string|SlashCommandClosure)[]` — the validated array. Throws when entries are neither strings nor closures.
+
+### `setSlashCommandAutoComplete(textarea, isFloating = false) → Promise<AutoComplete>`
 
 Wire the slash-command autocompleter onto an arbitrary `<textarea>`. Use this if your extension has a floating panel that should also accept STscript.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `textarea` | `HTMLTextAreaElement` | — | Target textarea to attach autocompletion to. |
+| `isFloating` | `boolean` | `false` | Show autocomplete as a floating window (e.g. for large QR editor). |
+
+**Returns:** `Promise<AutoComplete>` — the autocomplete instance, or `undefined` when the browser lacks negative-lookbehind support.
 
 ### `initSlashCommandAutoComplete() → Promise<void>`
 
 Boot-time autocomplete wiring for `#send_textarea`. Called once during init.
 
-### `activateScriptButtons()` / `deactivateScriptButtons()`
+**Returns:** `Promise<void>`.
 
-Show/hide the run/stop/pause buttons that appear while a script is running.
+### `activateScriptButtons() → void` / `deactivateScriptButtons() → void`
 
-### `pauseScriptExecution()` / `stopScriptExecution()`
+Show/hide the run/stop/pause buttons that appear while a script is running (toggles the `isExecutingCommandsFromChatInput` class on `#form_sheld`).
 
-Pause or abort the currently running closure (driven by the active `SlashCommandAbortController`).
+**Returns:** none (both).
 
-### `isExecutingCommandsFromChatInput` (let, `boolean`)
+### `pauseScriptExecution() → void` / `stopScriptExecution() → void`
+
+Pause or abort the currently running closure (driven by the active `SlashCommandAbortController`). Only affects chat-input-originated scripts.
+
+**Returns:** none (both).
+
+### `isExecutingCommandsFromChatInput: boolean` *(let)*
 
 `true` while a chat-input-originated script is running.
 
-### `commandsFromChatInputAbortController` (let, `AbortController | undefined`)
+### `commandsFromChatInputAbortController: SlashCommandAbortController | undefined` *(let)*
 
 The abort controller for the active chat-input script. Inspect or `.abort()` it from extension code to stop running scripts (or call `stopScriptExecution()`).
 
-### `COMMENT_NAME_DEFAULT` (`'Note'`)
+### `COMMENT_NAME_DEFAULT: string` *(const)*
 
-Default speaker name used by `/comment`.
+Default speaker name used by `/comment` — `'Note'`.
 
-### `CONNECT_API_MAP` (object)
+### `CONNECT_API_MAP: Record<string, object>` *(const)*
 
 Map from `/api` argument values (e.g. `'openai'`, `'kobold'`, `'kcpp'`) to their backend config:
 
@@ -172,7 +250,7 @@ Map from `/api` argument values (e.g. `'openai'`, `'kobold'`, `'kcpp'`) to their
 }
 ```
 
-### `UNIQUE_APIS` (string[])
+### `UNIQUE_APIS: string[]` *(const)*
 
 The deduplicated set of `main_api` values seen in `CONNECT_API_MAP`. Useful for iterating the supported backends.
 
@@ -190,9 +268,15 @@ Owns the static command registry. Extensions almost always interact with it via 
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 ```
 
-#### `SlashCommandParser.addCommandObject(command)`
+#### `SlashCommandParser.addCommandObject(command) → void`
 
 Register a new slash command. Throws on illegal names (those starting with `/`, `#`, `:`, `parser-flag`, or `breakpoint`). The parser also auto-detects the caller's stack and tags the command as `isExtension` / `isThirdParty` / records its source folder — no extra metadata needed from you.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `command` | `SlashCommand` | — | The command definition (typically built via `SlashCommand.fromProps(...)`). |
+
+**Returns:** none. Throws `Error('Illegal Name...')` if the name or any alias starts with a reserved prefix.
 
 ```js
 SlashCommandParser.addCommandObject(SlashCommand.fromProps({
@@ -205,15 +289,26 @@ SlashCommandParser.addCommandObject(SlashCommand.fromProps({
 }));
 ```
 
-#### `SlashCommandParser.addCommand(command, callback, aliases, helpString)` — deprecated
+#### `SlashCommandParser.addCommand(command, callback, aliases, helpString) → void` — deprecated
 
 Older positional registration API. Prefer `addCommandObject`.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `command` | `string` | — | Command name (no leading slash). |
+| `callback` | `(named, unnamed) => string \| Promise<string \| SlashCommandClosure>` | — | Handler function. |
+| `aliases` | `string[]` | — | List of alternative names. |
+| `helpString` | `string` | `''` | Help text shown in autocomplete and `/help`. |
+
+**Returns:** none.
 
 #### `parser.getHelpString() → string`
 
 Renders the full help table as HTML (used by `/help slash`).
 
-#### `parser.commands` / `SlashCommandParser.commands`
+**Returns:** `string` — HTML help block listing every registered command.
+
+#### `parser.commands: Record<string, SlashCommand>` / `SlashCommandParser.commands: Record<string, SlashCommand>`
 
 Object map of `{ [name]: SlashCommand }` (including aliases as separate keys).
 
@@ -258,6 +353,8 @@ The `callback` receives:
 - `named` — an object of name → value. Reserved keys are present too: `_scope`, `_parserFlags`, `_abortController`, `_debugController`, `_hasUnnamedArgument`.
 - `unnamed` — `string | SlashCommandClosure | (string | SlashCommandClosure)[]`. A string for the simple case; an array when `splitUnnamedArgument` is set.
 
+**Returns:** `SlashCommand` — the constructed command definition. Pass it to `SlashCommandParser.addCommandObject(...)` to register.
+
 ### `class SlashCommandArgument`
 
 An unnamed (positional) argument definition.
@@ -281,6 +378,8 @@ import { SlashCommandArgument, ARGUMENT_TYPE } from '../../../slash-commands/Sla
 | `enumProvider` | `(executor, scope) => SlashCommandEnumValue[]` | `null` | Dynamic autocomplete. |
 | `forceEnum` | `boolean` | `false` | Reject values outside `enumList`/provider. |
 
+**Returns:** `SlashCommandArgument` — the argument definition, suitable for inclusion in a `SlashCommand`'s `unnamedArgumentList`.
+
 ### `class SlashCommandNamedArgument extends SlashCommandArgument`
 
 A `--key=value` argument.
@@ -293,6 +392,8 @@ Same props as `SlashCommandArgument.fromProps`, plus:
 |------|------|---------|-------|
 | `name` | `string` | — | The argument name (`--name=value`). |
 | `aliasList` | `string[]` | `[]` | Alternative names. |
+
+**Returns:** `SlashCommandNamedArgument` — the argument definition, suitable for inclusion in a `SlashCommand`'s `namedArgumentList`.
 
 ### `enum ARGUMENT_TYPE`
 

@@ -77,13 +77,23 @@ Refreshed automatically after `writeSecret` / `deleteSecret` / `rotateSecret` / 
 
 Returns the `SECRET_KEYS` value that matches whatever API/source/textgen-type is currently selected in ST's connect panel. Returns `null` if the current selection doesn't correspond to a known secret. Useful when you need to know "what key would ST itself use right now".
 
+**Returns:** `string | null` — a `SECRET_KEYS.*` value, or `null` if the current API has no known secret.
+
 #### `canViewSecrets() → Promise<boolean | null>`
 
 Hits `/api/secrets/settings`. Resolves to `true` if the server's `config.yaml` has `allowKeysExposure: true`, `false` otherwise, or `null` on network/auth failure. Cheap to call.
 
+**Returns:** `Promise<boolean | null>` — `true` if key exposure is enabled, `false` if not, `null` on failure.
+
 #### `getSecretLabelById(id) → string`
 
 Scans every entry of every key in `secret_state` for one with the given `id`. Returns `"<label> (<value-preview>)"` or `''` if not found.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | `string` | — | Entry id to look up. |
+
+**Returns:** `string` — `"<label> (<value-preview>)"` or `''` if no entry matches.
 
 ### Reading values
 
@@ -99,6 +109,13 @@ if (!apiKey) {
 }
 ```
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `key` | `string` | — | A `SECRET_KEYS.*` value. |
+| `id` | `string` | — | Optional specific entry id. Defaults to the active entry. |
+
+**Returns:** `Promise<string | null>` — the plaintext secret, or `null` when keys aren't exposed / nothing is stored / on error.
+
 ### Mutating
 
 Extensions rarely need to write secrets — the user manages them in the connect panel. The functions are exposed mainly for OAuth flows and migration scripts.
@@ -107,21 +124,55 @@ Extensions rarely need to write secrets — the user manages them in the connect
 
 POSTs to `/api/secrets/write`. Generates a label from the current timestamp if `label` is omitted. With `options.allowEmpty === false` (the default), passing an empty `value` redirects to `deleteSecret(key)`. Returns the new entry's `id`, or `null` on error / no value. Emits `event_types.SECRET_WRITTEN`.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `key` | `string` | — | A `SECRET_KEYS.*` value. |
+| `value` | `string` | — | Plaintext secret to store. Empty value deletes (unless `allowEmpty`). |
+| `label` | `string` | auto timestamp | Human-readable label; auto-generated from the current time if omitted. |
+| `options` | `object` | `{}` | Options bag. |
+| `options.allowEmpty` | `boolean` | `false` | When `true`, an empty `value` is written instead of triggering a delete. |
+
+**Returns:** `Promise<string | null>` — the new entry id, or `null` on error / when nothing was written.
+
 #### `deleteSecret(key, id?) → Promise<void>`
 
 Without `id`, deletes the active entry for `key`. Emits `event_types.SECRET_DELETED`. Refreshes `secret_state` and re-triggers `#main_api` so ST reconnects with the new key set.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `key` | `string` | — | A `SECRET_KEYS.*` value. |
+| `id` | `string` | — | Optional entry id. Defaults to the active entry. |
+
+**Returns:** `Promise<void>` — resolves after the server confirms the delete and `secret_state` is refreshed.
 
 #### `rotateSecret(key, id) → Promise<void>`
 
 Marks a different stored entry as active for the given `key`. Emits `event_types.SECRET_ROTATED`. Refreshes `secret_state` and reconnects ST.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `key` | `string` | — | A `SECRET_KEYS.*` value. |
+| `id` | `string` | — | Entry id to make active. |
+
+**Returns:** `Promise<void>` — resolves after rotation and refresh.
+
 #### `renameSecret(key, id, label) → Promise<void>`
 
 Changes the human-readable label of a stored entry. Emits `event_types.SECRET_EDITED`.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `key` | `string` | — | A `SECRET_KEYS.*` value. |
+| `id` | `string` | — | Entry id to rename. |
+| `label` | `string` | — | New label. |
+
+**Returns:** `Promise<void>` — resolves after the rename is persisted.
+
 #### `readSecretState() → Promise<void>`
 
 Re-fetches `/api/secrets/read` and overwrites `secret_state`, then calls `updateSecretDisplay()` and refreshes the autocomplete datalists. Called automatically after every write — extensions normally don't need to call it.
+
+**Returns:** `Promise<void>` — resolves once `secret_state` and UI are refreshed.
 
 ### UI / lifecycle
 
@@ -129,13 +180,19 @@ Re-fetches `/api/secrets/read` and overwrites `secret_state`, then calls `update
 
 Updates the placeholder text on each API-key input in the connect panel to show whether a key is saved and which one is active. Pure UI concern; extensions can ignore.
 
+**Returns:** none.
+
 #### `checkOpenRouterAuth() → Promise<void>`
 
 If the current page URL is the OpenRouter OAuth callback, exchanges the authorization code for a key and stores it via `writeSecret(SECRET_KEYS.OPENROUTER, …)`. No-op otherwise. Called by ST during startup.
 
+**Returns:** `Promise<void>` — resolves after the exchange (or immediately on non-callback pages).
+
 #### `initSecrets() → Promise<void>`
 
 Binds DOM event handlers for the View Secrets button, the key manager dialog, the input fields, and the OpenRouter authorize button. Called once during app boot.
+
+**Returns:** `Promise<void>` — resolves once handlers are bound.
 
 ## Notes
 

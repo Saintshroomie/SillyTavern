@@ -60,17 +60,44 @@ See also the guide: [count-tokens-and-budget.md](../guides/count-tokens-and-budg
 
 Preferred entry point. Picks the right tokenizer for the current `main_api` (OpenAI sources are routed via `countTokensOpenAIAsync`; `BEST_MATCH` is resolved via `getTokenizerBestMatch`), consults the cache, and returns the token count plus `padding`. Returns `0` for empty/non-string input.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `str` | `string` | — | String to tokenize. |
+| `padding` | `number \| undefined` | `undefined` | Optional padding tokens added to the result. Defaults to 0 when omitted. |
+
+**Returns:** `Promise<number>` — token count for `str` plus `padding`.
+
 #### `getTokenCount(str, padding = undefined) → number`
 
 Synchronous version. Uses blocking XHR when the chosen tokenizer hits a remote endpoint. Prefer the async variant in extensions.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `str` | `string` | — | String to tokenize. |
+| `padding` | `number \| undefined` | `undefined` | Optional padding tokens added to the result. Defaults to 0 when omitted. |
+
+**Returns:** `number` — token count for `str` plus `padding`. Deprecated; use `getTokenCountAsync`.
 
 #### `countTokensOpenAI(messages, full = false) → number` / `countTokensOpenAIAsync(messages, full = false) → Promise<number>`
 
 Counts tokens for a single message object or an array of them via `/api/tokenizers/openai/count?model=<modelId>`. When `full` is `false`, subtracts 2 to approximate the per-message envelope removed by ST's prompt builder. Claude models always force `full = true`.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `messages` | `object \| object[]` | — | A single OpenAI-style message or an array of them. |
+| `full` | `boolean` | `false` | If `true`, returns the raw count; if `false`, subtracts 2 to approximate ST's per-message envelope adjustment. |
+
+**Returns:** `number` (sync) or `Promise<number>` (async) — message token count.
+
 #### `guesstimate(str) → number`
 
 Coarse fallback: `ceil(byteLength / CHARACTERS_PER_TOKEN_RATIO)`. Used when `tokenizers.NONE` is active or a remote tokenizer fails.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `str` | `string` | — | String to tokenize. |
+
+**Returns:** `number` — estimated token count based on byte length.
 
 ### Encoding / decoding
 
@@ -78,9 +105,23 @@ Coarse fallback: `ceil(byteLength / CHARACTERS_PER_TOKEN_RATIO)`. Used when `tok
 
 Returns the array of token ids for `str` using the specified tokenizer. Only tokenizers listed in `ENCODE_TOKENIZERS` (plus `OPENAI`, `GPT2`, `NERD`, `NERD2`, and remote APIs) have an `encode` endpoint; others return `[]` with a console warning.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `tokenizerType` | `number` | — | Tokenizer id from the `tokenizers` enum. |
+| `str` | `string` | — | String to tokenize. |
+
+**Returns:** `number[]` — array of token ids, or `[]` if the tokenizer can't encode.
+
 #### `decodeTextTokens(tokenizerType, ids) → { text: string, chunks?: string[] }`
 
 Inverse of `getTextTokens`. The remote `API_CURRENT`/`API_TEXTGENERATIONWEBUI`/`API_KOBOLD` tokenizers cannot decode and fall back to returning empty strings.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `tokenizerType` | `number` | — | Tokenizer id from the `tokenizers` enum. |
+| `ids` | `number[]` | — | Array of token ids to decode. |
+
+**Returns:** `{ text: string, chunks?: string[] }` — decoded text as a single string and, when available, the per-token chunks.
 
 ### Tokenizer selection
 
@@ -104,21 +145,43 @@ Re-export of `BYTES_PER_TOKEN` (3.35). Used in `guesstimate` and available for e
 
 Sets the `#tokenizer` dropdown to `tokenizerId` if it isn't already selected, and shows a toast.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `tokenizerId` | `number` | — | Tokenizer id from the `tokenizers` enum to select in the UI. |
+
+**Returns:** none.
+
 #### `getAvailableTokenizers() → Tokenizer[]`
 
 Reads the current options from `#tokenizer` and returns `[{ tokenizerId, tokenizerKey, tokenizerName }]`. `tokenizerKey` is the lowercase name from the `tokenizers` enum.
+
+**Returns:** `Tokenizer[]` — list of `{ tokenizerId, tokenizerKey, tokenizerName }` objects describing every tokenizer option currently in the UI.
 
 #### `getFriendlyTokenizerName(forApi) → Tokenizer`
 
 Resolves the active tokenizer (`{ tokenizerName, tokenizerKey, tokenizerId }`) for `forApi` (defaults to `main_api`). For `'openai'`, returns the model string from `getTokenizerModel()`. For non-OpenAI APIs, expands `BEST_MATCH` via `getTokenizerBestMatch`.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `forApi` | `string` | `main_api` | API to resolve the tokenizer for. Defaults to the main API. |
+
+**Returns:** `Tokenizer` — `{ tokenizerName, tokenizerKey, tokenizerId }` describing the active tokenizer for the given API.
+
 #### `getTokenizerBestMatch(forApi) → number`
 
 Heuristic picker. For Kobold/textgenerationwebui it prefers the connected API tokenizer when available, otherwise inspects the model name for `llama3`, `mistral`, `gemma`, `nemo`, `deepseek`, `yi`, `jamba`, `command-r`, `command-a`, `qwen2`. For NovelAI returns `NERD`/`NERD2`/`LLAMA3` based on model.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `forApi` | `string` | `main_api` | API to resolve the tokenizer for. Defaults to the main API. |
+
+**Returns:** `number` — tokenizer id from the `tokenizers` enum that best matches the connected model.
+
 #### `getTokenizerModel() → string`
 
 Returns the model id string used as the `?model=` query parameter for `/api/tokenizers/openai/*` endpoints. Maps OpenRouter / ElectronHub / Chutes / Custom / MiniMax / Deepseek / Azure model names to one of the canonical tokenizer model labels (`gpt-3.5-turbo`, `gpt-4`, `gpt-4o`, `claude`, `llama`, `llama3`, `mistral`, `gemma`, `jamba`, `qwen2`, `command-r`, `command-a`, `nemo`, `deepseek`, `yi`, `gpt2`).
+
+**Returns:** `string` — canonical model label used as the `?model=` query parameter for OpenAI tokenizer endpoints.
 
 ### Lifecycle
 
@@ -126,9 +189,13 @@ Returns the model id string used as the `?model=` query parameter for `/api/toke
 
 Called once at startup. Populates `TEXTGEN_TOKENIZERS`, loads the persisted token cache, and registers debug functions. Extensions should not call this.
 
+**Returns:** `Promise<void>` — resolves when init completes.
+
 #### `saveTokenCache() → Promise<void>`
 
 Flushes the in-memory `tokenCache` to localforage. Triggered by ST core after generation; extensions can call it if they bulk-add cache entries.
+
+**Returns:** `Promise<void>` — resolves when the cache has been written to localforage.
 
 ## Notes
 

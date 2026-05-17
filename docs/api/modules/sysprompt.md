@@ -36,9 +36,17 @@ Mutable array of `{ name, content, post_history }` objects. Populated by `loadSy
 
 Reads `data.sysprompt` (the array of saved presets) into `system_prompts`, runs the legacy instruct-mode migration, populates `#sysprompt_select`, and sets the enabled/content/post-history controls to match `power_user.sysprompt`.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `data` | `object` | — | Settings data object; `data.sysprompt` is consumed as the preset array. |
+
+**Returns:** `Promise<void>` — resolves once presets are loaded, migration has run, and the UI is bound.
+
 #### `initSystemPrompts() → void`
 
-Binds the enabled toggle, the preset dropdown, the content textarea, and the post-history textarea to `power_user.sysprompt`, and registers the slash commands:
+Binds the enabled toggle, the preset dropdown, the content textarea, and the post-history textarea to `power_user.sysprompt`, and registers the slash commands.
+
+**Returns:** none.
 
 | Command | Aliases | Purpose |
 |---------|---------|---------|
@@ -52,3 +60,10 @@ Binds the enabled toggle, the preset dropdown, the content textarea, and the pos
 #### `checkForSystemPromptInInstructTemplate(name, template) → Promise<void>`
 
 Called when importing an instruct template that still carries a `system_prompt` field. Prompts the user to save it as a standalone system prompt preset named `[Migrated] ${name}`; on confirmation, the field is removed from the instruct template. Used internally by ST's preset importers — extensions importing presets programmatically should call this before saving to avoid leaving orphaned system prompts.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Name of the instruct template being imported. |
+| `template` | `object` | — | Instruct template object; its `system_prompt` field is what may be migrated. |
+
+**Returns:** `Promise<void>` — resolves after the user confirms or cancels the migration prompt.

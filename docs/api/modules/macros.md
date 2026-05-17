@@ -55,18 +55,44 @@ After registration, anywhere ST evaluates macros — character cards,
 World Info entries, slash commands, prompt templates — will resolve
 `{{scene_number}}` against your function.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `key` | `string` | — | Macro name (without `{{ }}`). |
+| `value` | `string \| MacroFunction` | — | Either a literal string or a function returning the replacement string. |
+| `description` | `string` | `''` | Optional human-readable description used in macro UIs. |
+
+**Returns:** none.
+
 #### `MacrosParser.unregisterMacro(key)`
 
 Remove a previously-registered macro. Safe to call on unknown keys.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `key` | `string` | — | Macro name to remove. |
+
+**Returns:** none.
 
 #### `MacrosParser.get(key) → string | MacroFunction | undefined`
 
 Look up a registered macro by name. Returns the stored value/function
 or `undefined`.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `key` | `string` | — | Macro name. |
+
+**Returns:** `string | MacroFunction | undefined` — the registered value, or `undefined` if no such macro.
+
 #### `MacrosParser.has(key) → boolean`
 
 Check whether a macro is registered.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `key` | `string` | — | Macro name. |
+
+**Returns:** `boolean` — `true` if a macro with this key is registered.
 
 #### `MacrosParser.populateEnv(env)`
 
@@ -74,10 +100,22 @@ Populates an `env` object with every registered macro so it can be
 passed to `evaluateMacros`. ST calls this internally; extensions rarely
 need it directly.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `env` | `EnvObject` | — | Mutable env map to merge registered macros into. |
+
+**Returns:** none.
+
 #### `MacrosParser.sanitizeMacroValue(value) → string`
 
 Coerces a macro value (string, function, number, etc.) to a safe
 string for substitution.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `value` | `any` | — | The raw value to coerce. |
+
+**Returns:** `string` — the sanitized string form of `value`.
 
 #### `MacrosParser[Symbol.iterator]`
 
@@ -105,6 +143,8 @@ each substituted value with `postProcessFn`.
 Built-in macros (`{{char}}`, `{{user}}`, `{{time}}`, etc.) are merged in
 automatically alongside `env`.
 
+**Returns:** `string` — `content` with every `{{...}}` macro resolved.
+
 Most extensions should call
 [`substituteParams`](script.md#substituteparamsmessage-name1-name2-randomvalues-replacecharacternames)
 or `substituteParamsExtended` instead — those wrappers also handle
@@ -120,6 +160,8 @@ walking backwards. Returns `null` if no message matches.
 | `options.exclude_swipe_in_propress` | `boolean` | `true` | Skip messages whose current swipe hasn't finished yet. |
 | `options.filter` | `(msg) => boolean` | `null` | Optional predicate — return only the most recent message that matches. |
 
+**Returns:** `number | null` — the matching message index in `context.chat`, or `null` if no message matched.
+
 ```js
 import { getLastMessageId } from '../../../macros.js';
 
@@ -131,6 +173,8 @@ const lastBot = getLastMessageId({ filter: m => !m.is_user && !m.is_system });
 
 Called once during ST startup to register the built-in macro set
 (`lastGenerationType`, etc.). Extensions never call this themselves.
+
+**Returns:** none.
 
 ## See also
 

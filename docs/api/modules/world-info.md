@@ -78,25 +78,56 @@ See also the [world info & lore guide](../guides/world-info-and-lore.md).
 
 #### `getWorldInfoPrompt(chat, maxContext, isDryRun, globalScanData) → Promise<WIPromptResult>`
 
-Runs `checkWorldInfo` against `chat` (reversed message strings), `maxContext` (current generation context size), with `globalScanData` for chat-independent scanning. Returns `{ worldInfoString, worldInfoBefore, worldInfoAfter }`. When `isDryRun` is true, no events are emitted. This is the entry point the main prompt builder uses.
+Runs `checkWorldInfo` against `chat` (reversed message strings), `maxContext` (current generation context size), with `globalScanData` for chat-independent scanning. When `isDryRun` is true, no events are emitted. This is the entry point the main prompt builder uses.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `chat` | `string[]` | — | Chat messages to scan, in reverse order. |
+| `maxContext` | `number` | — | Maximum generation context size in tokens. |
+| `isDryRun` | `boolean` | — | When true, suppresses `WORLD_INFO_ACTIVATED` event emission. |
+| `globalScanData` | `WIGlobalScanData` | — | Chat-independent context to be scanned. |
+
+**Returns:** `Promise<WIPromptResult>` — `{ worldInfoString, worldInfoBefore, worldInfoAfter, worldInfoExamples, worldInfoDepth, anBefore, anAfter, outletEntries }`.
 
 #### `loadWorldInfo(name) → Promise<object|null>`
 
 Returns the WI file `name` from `worldInfoCache` if present, otherwise POSTs `/api/worldinfo/get`, caches, and returns it. Returns `null` on failure.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | World filename to load. |
+
+**Returns:** `Promise<object|null>` — the loaded world data, or `null` if the request failed or `name` was empty.
+
 #### `worldInfoCache: StructuredCloneMap<string, object>`
 
-Process-wide cache for loaded world files. Values are deep-cloned on get so callers cannot mutate cached data; use `saveWorldInfo` to persist edits. Useful for synchronous access in tight loops.
+`worldInfoCache: StructuredCloneMap<string, object>` — process-wide cache for loaded world files. Values are deep-cloned on get so callers cannot mutate cached data; use `saveWorldInfo` to persist edits. Useful for synchronous access in tight loops.
 
 #### `sortWorldInfoEntries(data, { customSort }?) → any[]`
 
 Sorts `data` by the editor's currently-selected sort option, or by `customSort` if provided (`{ sortField, sortOrder, sortRule }`). Returns the sorted (or unchanged-if-empty) array.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `data` | `any[]` | — | WI entries to sort. |
+| `options.customSort` | `{sortField?: string, sortOrder?: string, sortRule?: string}` | `null` | Override the editor's sort selection. |
+
+**Returns:** `any[]` — the sorted array (or `data` unchanged if empty).
 
 ### Editing entries
 
 #### `setWIOriginalDataValue(data, uid, key, value) → void`
 
 When an entry has an `originalData` shadow (preserved during conversion from character-book format), this writes `value` into the right nested JSON path for `key`. Use `originalWIDataKeyMap[fieldName]` to get the path to pass as `key`.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `data` | `object` | — | The world data object containing `originalData.entries`. |
+| `uid` | `number` | — | Unique identifier of the target entry. |
+| `key` | `string` | — | Dotted JSON path inside the original entry (use `originalWIDataKeyMap[...]`). |
+| `value` | `any` | — | Value to write. |
+
+**Returns:** `void` — no-op if `data.originalData.entries` is missing or the entry isn't found.
 
 ```js
 setWIOriginalDataValue(data, entry.uid, originalWIDataKeyMap.content, entry.content);
@@ -106,9 +137,16 @@ setWIOriginalDataValue(data, entry.uid, originalWIDataKeyMap.content, entry.cont
 
 Removes the entry with `uid` from `data.originalData.entries`. Use after `deleteWorldInfoEntry`.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `data` | `object` | — | The world data object containing `originalData.entries`. |
+| `uid` | `string \| number` | — | Unique identifier of the entry to remove. |
+
+**Returns:** `void` — no-op if the entry isn't found.
+
 #### `originalWIDataKeyMap: Record<string, string>`
 
-Lookup table mapping in-memory entry fields (e.g. `'content'`, `'depth'`, `'matchWholeWords'`) to their dotted paths inside `originalData` JSON (e.g. `'content'`, `'extensions.depth'`, `'extensions.match_whole_words'`).
+`originalWIDataKeyMap: Record<string, string>` — lookup table mapping in-memory entry fields (e.g. `'content'`, `'depth'`, `'matchWholeWords'`) to their dotted paths inside `originalData` JSON (e.g. `'content'`, `'extensions.depth'`, `'extensions.match_whole_words'`).
 
 ### Position & strategy enums
 
@@ -185,13 +223,29 @@ Live bindings — read fresh, do not cache.
 
 Snapshots the current settings into a plain object suitable for `/api/settings/save`. Includes `world_info`, depth, budget, recursion, alerts, case-sensitivity, group scoring, character strategy, budget cap, and max recursion steps.
 
+**Returns:** `WorldInfoSettings` — a plain settings object with every WI tunable.
+
 #### `updateWorldInfoSettings(settings, activeWorldInfo?) → void`
 
 Mutates each live binding from `settings` and updates UI controls. Pass `activeWorldInfo` (array of names) to also set `selected_world_info`.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `settings` | `WorldInfoSettings` | — | New settings object; fields present overwrite the live bindings. |
+| `activeWorldInfo` | `string[]` | `undefined` | Optional list of active world names to assign to `selected_world_info`. |
+
+**Returns:** `void` (triggers a debounced save).
+
 #### `setWorldInfoSettings(settings, data) → void`
 
 Variant used during initial settings load — copies values from `settings` into the live bindings and reads world data from `data`. Tolerant of missing fields.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `settings` | `object` | — | Partial settings blob from saved app state. |
+| `data` | `object` | — | App data containing `world_names` and related world state. |
+
+**Returns:** `void`.
 
 ### Constants
 
@@ -209,13 +263,28 @@ Variant used during initial settings load — copies values from `settings` into
 
 If `name` is empty, hides the editor; otherwise loads the world via `loadWorldInfo` and renders its entries.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | World name to display; empty/falsy hides the editor. |
+
+**Returns:** `Promise<void>` — resolves once the editor is rendered (or hidden).
+
 #### `reloadEditor(file, loadIfNotSelected = false) → void`
 
 If `file` is the currently-selected world in `#world_editor_select`, reselects/triggers a change. With `loadIfNotSelected=true`, switches to `file` even if it wasn't selected.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `file` | `string` | — | World file to reload. |
+| `loadIfNotSelected` | `boolean` | `false` | Switch to `file` even if it isn't currently selected. |
+
+**Returns:** `void`.
+
 #### `updateWorldInfoList() → Promise<void>`
 
-GETs `/api/settings/get`, rebuilds `world_names`, and repopulates the `#world_info` and `#world_editor_select` dropdowns, preserving selection state.
+POSTs `/api/settings/get`, rebuilds `world_names`, and repopulates the `#world_info` and `#world_editor_select` dropdowns, preserving selection state.
+
+**Returns:** `Promise<void>` — resolves once the dropdowns are repopulated.
 
 ## Notes
 

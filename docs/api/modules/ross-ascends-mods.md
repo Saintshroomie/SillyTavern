@@ -54,49 +54,89 @@ loadMovingUIState();   // restore last saved position
 
 `loadMovingUIState` lives in [`power-user.js`](./power-user.md), not this module — call it after mounting your panel.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `$elmnt` | `JQuery` | — | The jQuery-wrapped element to make draggable. Must have a unique `id` for persistence. |
+
+**Returns:** none.
+
 ### `humanizeGenTime(total_gen_time) → string`
 
 Formats a millisecond duration into a short `mm:ss` (or `Xs`) display string suitable for showing on a generation badge.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `total_gen_time` | `number` | — | Generation time in milliseconds. |
+
+**Returns:** `string` — human-readable duration (`mm:ss` or `Xs`).
 
 ### `getParsedUA() → IResult`
 
 Returns the cached `UAParser` result for the current browser. Use `.os.name`, `.browser.name`, `.device.type`, etc.
 
+**Returns:** `IResult` — the UAParser result object (`browser`, `os`, `device`, etc.).
+
 ### `isMobile() → boolean`
 
 `true` when the device type is `'mobile'` or `'tablet'`.
+
+**Returns:** `boolean` — `true` on mobile/tablet form factors.
 
 ### `shouldSendOnEnter() → boolean`
 
 Resolves the user's "send on Enter" setting and the current modifier state. Use this from a textarea handler to decide whether Enter should submit or insert a newline.
 
+**Returns:** `boolean` — `true` if the current key event should submit, `false` to insert a newline.
+
 ### `humanizedDateTime(timestamp?) → string`
 
 Locale-aware date+time. Defaults to `Date.now()`. Used in places like character creation timestamps.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `timestamp` | `number` | `Date.now()` | Milliseconds since epoch. |
+
+**Returns:** `string` — humanized timestamp `YYYY-MM-DD@HHhMMmSSsMSms`.
 
 ### `getMessageTimeStamp(timestamp?) → string`
 
 The fixed timestamp format ST writes onto chat messages. Prefer this when stamping messages your extension creates so they match the rest of the chat.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `timestamp` | `number` | `Date.now()` | Optional explicit timestamp in milliseconds. |
+
+**Returns:** `string` — ISO 8601 formatted timestamp.
+
 ### `RA_CountCharTokens() → Promise<void>`
 
 Recalculates and updates the token-count display in the character editor. Call after programmatically modifying a card field if you need the count refreshed immediately.
+
+**Returns:** `Promise<void>` — resolves once the badge has been updated.
 
 ### `favsToHotswap() → Promise<void>`
 
 Rebuilds the favourites hotswap row at the top of the character panel. Call after toggling a character's `fav` flag.
 
+**Returns:** `Promise<void>` — resolves once the hotswap row is repainted.
+
 ### `initMovingUI() → Promise<void>`
 
 Initializes the Moving UI overlay (the floating-panel layout system). Called once during app boot. Usually not invoked manually by extensions, but useful when a popout/floating panel needs the system available.
+
+**Returns:** `Promise<void>` — resolves once the Moving UI subsystem is ready.
 
 ### `autoFitSendTextAreaDebounced()`
 
 A debounced (short-timeout) version of the chat textarea auto-grow handler. Call after programmatically setting `#send_textarea` content to keep it visually sized.
 
+**Returns:** none.
+
 ### `initRossMods() → void`
 
 Boot-time initializer. Not normally called from extension code.
+
+**Returns:** none.
 
 ## Notes
 

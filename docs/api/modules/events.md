@@ -37,6 +37,50 @@ eventSource.removeListener(eventName, handler); // unsubscribe a specific handle
 await eventSource.emit(eventName, ...args);    // fire (await runs handlers in registration order)
 ```
 
+#### `eventSource.on(eventName, handler) → void`
+
+Subscribe `handler` to fire every time `eventName` is emitted. If `eventName` is sticky and has already fired, `handler` is invoked synchronously during this call.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `eventName` | `string` | — | Event constant from `event_types`. |
+| `handler` | `(...args) => void \| Promise<void>` | — | Listener invoked each time the event fires; may be `async`. |
+
+**Returns:** none.
+
+#### `eventSource.once(eventName, handler) → void`
+
+Subscribe `handler` for **exactly one** fire of `eventName`, then automatically remove it.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `eventName` | `string` | — | Event constant from `event_types`. |
+| `handler` | `(...args) => void \| Promise<void>` | — | One-shot listener. |
+
+**Returns:** none.
+
+#### `eventSource.removeListener(eventName, handler) → void`
+
+Unsubscribe a previously registered handler. The reference must be the **same function** passed to `on` / `once`.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `eventName` | `string` | — | Event constant from `event_types`. |
+| `handler` | `Function` | — | The exact handler reference to remove. |
+
+**Returns:** none.
+
+#### `eventSource.emit(eventName, ...args) → Promise<void>`
+
+Fire `eventName`, awaiting each registered handler **sequentially** in registration order. Extensions rarely call this directly — it's primarily used by ST core.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `eventName` | `string` | — | Event constant from `event_types`. |
+| `...args` | `any[]` | `[]` | Per-event payload; signature depends on the event. |
+
+**Returns:** `Promise<void>` — resolves once every handler has finished (including async handlers).
+
 Notes:
 
 - Handlers may be `async`. `emit` awaits them sequentially, so a slow handler can delay subsequent ones.

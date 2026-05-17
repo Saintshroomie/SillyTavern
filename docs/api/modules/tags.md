@@ -47,13 +47,33 @@ import {
 
 Accepts a character object, character id (number), character avatar key, or group id, and returns the key used in `tag_map`. If the input resolves to a known character that doesn't yet have an entry in `tag_map`, the entry is created empty and the avatar is returned.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `entityOrKey` | `object \| number \| string` | — | A character object (with `id`), a character id, a character avatar key, or a group id. |
+
+**Returns:** `string | undefined` — the `tag_map` key, or `undefined` if no match.
+
 #### `getTagKeyForEntityElement(element) → string|undefined`
 
 Walks `element` (a jQuery object or selector string) upward looking for `data-grid` or `data-chid`, then resolves whichever it finds with `getTagKeyForEntity`.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `element` | `JQuery<HTMLElement> \| string` | — | DOM element (or selector) inside a tag-bearing entity row. |
+
+**Returns:** `string | undefined` — the `tag_map` key, or `undefined` if no ancestor carries `data-grid` / `data-chid`.
+
 #### `searchCharByName(charName, { suppressLogging }?) → string|null`
 
 Resolves a char/group by display name (falling back to the current entity if `charName` is empty). Toasts `Character {name} not found.` on miss unless `suppressLogging` is true. Mostly used by slash commands.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `charName` | `string \| null` | — | Display name to look up; empty string falls back to current entity. |
+| `options` | `object` | `{}` | Option bag. |
+| `options.suppressLogging` | `boolean` | `false` | Skip the toast warning on miss. |
+
+**Returns:** `string | null` — the `tag_map` key, or `null` if not found.
 
 ### Tag mutation
 
@@ -61,9 +81,29 @@ Resolves a char/group by display name (falling back to the current entity if `ch
 
 Adds `tag` (one tag or array) to `entityId` (one key or array). Saves settings, re-renders the inline tag list, and optionally re-renders the list at `tagListSelector`. Returns `true` if any add actually happened.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `tag` | `Tag \| Tag[]` | — | Tag or list of tags to add. |
+| `entityId` | `string \| string[]` | — | One or more entity keys. |
+| `options` | `object` | `{}` | Option bag. |
+| `options.tagListSelector` | `JQuery<HTMLElement> \| string \| null` | `null` | Extra tag-list element to repaint after add. |
+| `options.tagListOptions` | `PrintTagListOptions` | `{}` | Options forwarded to `printTagList`. |
+
+**Returns:** `boolean` — `true` if at least one tag was added.
+
 #### `removeTagFromEntity(tag, entityId, { tagListSelector?, tagElement? }?) → boolean`
 
 Removes `tag` from one or many entities. If you pass `tagElement` (the DOM element for that tag), it is removed from the DOM directly. Returns `true` if any removal happened.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `tag` | `Tag` | — | Tag to remove. |
+| `entityId` | `string \| string[]` | — | One or more entity keys. |
+| `options` | `object` | `{}` | Option bag. |
+| `options.tagListSelector` | `JQuery<HTMLElement> \| string \| null` | `null` | Extra tag-list element to repaint after removal. |
+| `options.tagElement` | `JQuery<HTMLElement> \| null` | `null` | Direct DOM element to detach. |
+
+**Returns:** `boolean` — `true` if at least one tag was removed.
 
 ### UI helpers
 
@@ -71,21 +111,50 @@ Removes `tag` from one or many entities. If you pass `tagElement` (the DOM eleme
 
 Repaints `#tagList` for the character `chid` (defaulting to the active `this_chid`). In the character-creation flow, reads the in-progress tag ids out of the DOM and reprints them as removable.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `chid` | `number \| null` | `null` | Character id; defaults to the active `this_chid`. |
+
+**Returns:** none.
+
 #### `applyTagsOnGroupSelect(groupId = null) → void`
 
 Repaints `#groupTagList` for the group and the candidate/member filter lists. In `group_create` mode, reads in-progress tags out of the DOM.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `groupId` | `number \| null` | `null` | Group id; defaults to the active `selected_group`. |
+
+**Returns:** none.
 
 #### `applyCharacterTagsToMessageDivs({ mesIds }?) → void`
 
 Clears existing `data-char-tag-*` and `data-char-tags` attributes on chat message elements, then re-applies them based on the speaking character's current tags. Pass `mesIds` to limit the update.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `options` | `object` | `{}` | Option bag. |
+| `options.mesIds` | `number[]` | `[]` | Restrict the update to these message ids. Empty array means all. |
+
+**Returns:** none.
+
 #### `createTagInput(inputSelector, listSelector, tagListOptions?) → void`
 
 Wires jQuery UI autocomplete on `inputSelector` so that picking a suggestion calls `selectTag` against `listSelector`. Used internally to create the standard `#tagInput` / `#groupTagInput` controls.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `inputSelector` | `string` | — | Selector for the input element. |
+| `listSelector` | `string` | — | Selector for the tag-list element to mutate. |
+| `tagListOptions` | `PrintTagListOptions` | `{}` | Print options for tag rendering. |
+
+**Returns:** none.
+
 #### `initTags() → void`
 
 Binds document-level tag click/input handlers and creates the two stock tag inputs. Called once at app startup.
+
+**Returns:** none.
 
 ### Enums
 

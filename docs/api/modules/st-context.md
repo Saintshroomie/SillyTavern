@@ -30,6 +30,8 @@ Both calls return the **same** object — there is no separate "extension contex
 
 Constructs and returns a fresh context object on each call. The object is **not** cached — it captures the current values of `name1`, `name2`, `this_chid`, `selected_group`, `online_status`, etc., at call time, so always re-call before reading time-sensitive properties:
 
+**Returns:** `Context` — a freshly assembled object snapshotting all live ST state (chat, characters, generation primitives, events, slash-command APIs, popup helpers, world info, variables, etc.). See the breakdown below.
+
 ```js
 function onChatChanged() {
     const ctx = SillyTavern.getContext();  // fresh, post-switch

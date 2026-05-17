@@ -46,6 +46,8 @@ Registers a tool. The fields:
 
 If a tool with the same `name` is already registered, it is **overwritten** with a console warning. Re-register on each extension load.
 
+**Returns:** none.
+
 ```js
 ToolManager.registerFunctionTool({
     name: 'get_weather',
@@ -68,15 +70,33 @@ ToolManager.registerFunctionTool({
 
 Removes a tool from the registry. Silent no-op if `name` is not registered.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Tool name to remove. |
+
+**Returns:** none.
+
 #### Inspection
 
 ##### `ToolManager.getDisplayName(name) → string`
 
 Returns the tool's `displayName` if set, otherwise `name`. Returns `name` for unknown tools.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Tool name to look up. |
+
+**Returns:** `string` — the friendly display name, or `name` itself as fallback.
+
 ##### `ToolManager.isStealthTool(name) → boolean`
 
 True if the tool was registered with `stealth: true`.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Tool name to check. |
+
+**Returns:** `boolean` — `true` if the tool is stealth-registered.
 
 #### Capability gating
 
@@ -84,9 +104,24 @@ True if the tool was registered with `stealth: true`.
 
 True when `main_api === 'openai'`, `function_calling` is enabled, the `custom_prompt_post_processing` mode is compatible (`NONE` or any `*_TOOLS` variant), and the current source+model is on the per-source allowlist (consulting `model_list` capability flags for OpenRouter / Mistral / AIMLAPI / Chutes / ElectronHub / WorkersAI / Fireworks / Pollinations).
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `settings` | `object \| null` | `null` | Optional override of `oai_settings`/active settings; defaults to live values. |
+| `model` | `string \| null` | `null` | Optional explicit model id; defaults to the active selection. |
+
+**Returns:** `boolean` — `true` when the active API/model combo supports function calling.
+
 ##### `ToolManager.canPerformToolCalls(type, settings = null, model = null) → boolean`
 
 True when `isToolCallingSupported` is true **and** `type` is not one of `'impersonate'`, `'quiet'`, `'continue'`. Use this to decide whether to register tools for a given generation pass.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | `string` | — | Generation type (`'normal'`, `'continue'`, `'impersonate'`, `'quiet'`, etc.). |
+| `settings` | `object \| null` | `null` | Optional settings override. |
+| `model` | `string \| null` | `null` | Optional explicit model id. |
+
+**Returns:** `boolean` — `true` if tools should be offered for this generation pass.
 
 #### Per-request setup
 
@@ -94,15 +129,35 @@ True when `isToolCallingSupported` is true **and** `type` is not one of `'impers
 
 Walks the registry, calls each tool's `shouldRegister()`, and attaches the OpenAI-style `tools` array (plus `tool_choice: 'auto'`) to `data`. Called by ST's core generation pipeline once the prompt is built.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `data` | `object` | — | Mutable generation payload; receives `tools` and `tool_choice` on success. |
+
+**Returns:** `Promise<void>` — resolves once tools have been attached.
+
 #### Response parsing
 
 ##### `ToolManager.hasToolCalls(data) → boolean`
 
 True if the (parsed) response contains at least one tool call in any supported provider format.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `data` | `object` | — | Parsed LLM response. |
+
+**Returns:** `boolean` — `true` if at least one tool call is present.
+
 ##### `ToolManager.parseToolCalls(toolCalls, parsed, toolSignatures = {}) → void`
 
 Updates `toolCalls` (an array indexed by stream choice index, each entry an array of partial tool calls) with a new streamed chunk. Handles OpenAI deltas, Cohere `tool-call-*` events, Anthropic `content_block` / `input_json_delta`, and Google `candidates[].content.parts`. Encrypted thought signatures keyed by tool-call id can be passed via `toolSignatures`.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `toolCalls` | `Array<Array<object>>` | — | Accumulator array — mutated in place. |
+| `parsed` | `object` | — | Newly arrived parsed chunk to merge in. |
+| `toolSignatures` | `Record<string, string>` | `{}` | Optional map of tool-call id → encrypted thought signature. |
+
+**Returns:** none — `toolCalls` is mutated in place.
 
 ##### `ToolManager.invokeFunctionTools(data, { reasoningText = null } = {}) → Promise<ToolInvocationResult>`
 
@@ -118,13 +173,35 @@ End-to-end dispatcher: extracts tool calls from `data`, invokes each via the reg
 
 A `ToolInvocation` is `{ id, displayName, name, parameters, result, signature?, reasoning?, error? }` — note that `parameters` and `result` are always strings (JSON-stringified if the action returned an object).
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `data` | `object` | — | Parsed LLM response containing tool calls. |
+| `options` | `object` | `{}` | Option bag. |
+| `options.reasoningText` | `string \| null` | `null` | Optional chain-of-thought text to attach to invocations. |
+
+**Returns:** `Promise<ToolInvocationResult>` — `{ invocations, errors, stealthCalls }` as described above.
+
 ##### `ToolManager.invokeFunctionTool(name, parameters) → Promise<string | Error>`
 
 Invokes a single tool by name. `parameters` may be a JSON string, an empty string (treated as `{}`), or an already-parsed object. Returns the tool's result (JSON-stringified if non-string) or an `Error` with `cause` set to the tool name on failure.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Registered tool name. |
+| `parameters` | `string \| object` | — | Tool arguments, as a JSON string, empty string (treated as `{}`), or pre-parsed object. |
+
+**Returns:** `Promise<string | Error>` — the action's stringified result, or an `Error` with `cause` set to the tool name on failure.
+
 ##### `ToolManager.formatToolCallMessage(name, parameters) → Promise<string>`
 
 Runs the tool's `formatMessage` (if any) to produce the toast text shown while the call is in flight.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `name` | `string` | — | Registered tool name. |
+| `parameters` | `string \| object` | — | Tool arguments (same shape as `invokeFunctionTool`). |
+
+**Returns:** `Promise<string>` — the formatted message, or an empty string if no `formatMessage` is configured.
 
 #### Persistence
 
@@ -132,15 +209,29 @@ Runs the tool's `formatMessage` (if any) to produce the toast text shown while t
 
 Pushes a system message into `chat` summarizing the tool calls, emits `TOOL_CALLS_PERFORMED` and `TOOL_CALLS_RENDERED`, renders the new message, and persists the chat. Called by ST core after `invokeFunctionTools`; extensions normally do not invoke this directly.
 
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `invocations` | `ToolInvocation[]` | — | Invocation records produced by `invokeFunctionTools`. |
+
+**Returns:** `Promise<void>` — resolves once the chat message is appended and saved.
+
 ##### `ToolManager.showToolCallError(errors) → void`
 
 Shows an error toast that opens a popup listing the per-tool failure messages.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `errors` | `Error[]` | — | Errors collected from failed tool invocations. |
+
+**Returns:** none.
 
 #### Slash commands
 
 ##### `ToolManager.initToolSlashCommands() → void`
 
 Registers `/tools-list` (returns the OpenAI-shape tool definitions) and `/tools-invoke` (invokes a tool by name with JSON parameters). Called once at startup.
+
+**Returns:** none.
 
 ## Notes
 
