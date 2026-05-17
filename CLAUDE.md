@@ -4,6 +4,22 @@
 
 This is a comprehensive development guide for building SillyTavern third-party extensions, from simple UI additions to complex systems like **SillyMem** (structured narrative memory with LLM-driven scene summaries, fact extraction, and narrative arc management). It covers the full ST extension API surface: context, events, prompt injection, LLM generation, token counting, file storage, group chats, and more.
 
+## Full API reference
+
+This file documents **patterns and best practices** — how to *think* about
+extension development. For an enumerated reference of every exported
+function across SillyTavern's modules (`script.js`, `extensions.js`,
+`tokenizers.js`, `popup.js`, `world-info.js`, `variables.js`,
+`secrets.js`, `slash-commands/*`, and ~20 others), see:
+
+- **[`docs/api/README.md`](docs/api/README.md)** — index + import-path map
+- **[`docs/api/modules/`](docs/api/modules/)** — per-module reference files
+- **[`docs/api/guides/`](docs/api/guides/)** — task-oriented tutorials
+
+The reference docs complement this file; they don't replace it. Start
+here for patterns and recipes, then jump to `docs/api/modules/` when you
+need a specific signature.
+
 ## Repository Structure
 
 ```
